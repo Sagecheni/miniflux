@@ -940,7 +940,7 @@ func TestBilibiliIframeAllowed(t *testing.T) {
 	config.Opts = config.NewConfigOptions()
 
 	input := `<iframe width="640" height="360" src="https://www.bilibili.com/blackboard/html5mobileplayer.html?aid=115694792345030&amp;cid=&amp;bvid=BV1o2mbB8EwH" frameborder="0" allowfullscreen></iframe>`
-	expected := `<iframe width="640" height="360" src="https://www.bilibili.com/blackboard/html5mobileplayer.html?aid=115694792345030&amp;cid=&amp;bvid=BV1o2mbB8EwH" frameborder="0" allowfullscreen sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" loading="lazy"></iframe>`
+	expected := `<iframe width="640" height="360" src="https://www.bilibili.com/blackboard/html5mobileplayer.html?aid=115694792345030&amp;cid=&amp;bvid=BV1o2mbB8EwH" frameborder="0" allowfullscreen="" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" loading="lazy"></iframe>`
 	output := sanitizeHTMLWithDefaultOptions("http://example.org/", input)
 
 	if expected != output {
