@@ -10,6 +10,9 @@ services:
       - CREATE_ADMIN=1
       - ADMIN_USERNAME=admin
       - ADMIN_PASSWORD=test123
+      - http_proxy=http://host.docker.internal:6152
+      - https_proxy=http://host.docker.internal:6152
+      - no_proxy=localhost,127.0.0.1,::1
   db:
     image: postgres:latest
     restart: unless-stopped

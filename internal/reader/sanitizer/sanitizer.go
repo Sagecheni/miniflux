@@ -118,6 +118,7 @@ var (
 		"cdn.embedly.com":      {},
 		"dailymotion.com":      {},
 		"open.spotify.com":     {},
+		"bilibili.com":         {},
 		"player.bilibili.com":  {},
 		"player.twitch.tv":     {},
 		"player.vimeo.com":     {},
