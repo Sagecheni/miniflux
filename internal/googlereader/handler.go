@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"miniflux.app/v2/internal/config"
@@ -56,6 +57,8 @@ func Serve(router *mux.Router, store *storage.Storage) {
 	sr.HandleFunc("/disable-tag", handler.disableTagHandler).Methods(http.MethodPost).Name("Disable Tag")
 	sr.HandleFunc("/tag/list", handler.tagListHandler).Methods(http.MethodGet).Name("TagList")
 	sr.HandleFunc("/user-info", handler.userInfoHandler).Methods(http.MethodGet).Name("UserInfo")
+	sr.HandleFunc("/unread-count", handler.unreadCountHandler).Methods(http.MethodGet).Name("UnreadCount")
+	sr.HandleFunc("/preference/list", handler.preferenceListHandler).Methods(http.MethodGet).Name("PreferenceList")
 	sr.HandleFunc("/subscription/list", handler.subscriptionListHandler).Methods(http.MethodGet).Name("SubscriptonList")
 	sr.HandleFunc("/subscription/edit", handler.editSubscriptionHandler).Methods(http.MethodPost).Name("SubscriptionEdit")
 	sr.HandleFunc("/subscription/quickadd", handler.quickAddHandler).Methods(http.MethodPost).Name("QuickAdd")
@@ -526,6 +529,34 @@ func unsubscribe(streams []Stream, store *storage.Storage, userID int64) error {
 		}
 	}
 	return nil
+}
+
+func formatTimestampUsec(t time.Time) string {
+	if t.IsZero() {
+		return "0"
+	}
+	return strconv.FormatInt(t.UnixMicro(), 10)
+}
+
+func timestampUsecValue(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMicro()
+}
+
+func boolPrefValue(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
+}
+
+func fallbackPreferenceValue(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func rename(feedStream Stream, title string, store *storage.Storage, userID int64) error {
@@ -1015,6 +1046,135 @@ func (h *handler) userInfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	userInfo := userInfoResponse{UserID: strconv.FormatInt(user.ID, 10), UserName: user.Username, UserProfileID: strconv.FormatInt(user.ID, 10), UserEmail: user.Username}
 	json.OK(w, r, userInfo)
+}
+
+func (h *handler) unreadCountHandler(w http.ResponseWriter, r *http.Request) {
+	userID := request.UserID(r)
+	clientIP := request.ClientIP(r)
+
+	slog.Debug("[GoogleReader] Handle /unread-count",
+		slog.String("handler", "unreadCountHandler"),
+		slog.String("client_ip", clientIP),
+		slog.String("user_agent", r.UserAgent()),
+	)
+
+	if err := checkOutputFormat(r); err != nil {
+		json.BadRequest(w, r, err)
+		return
+	}
+
+	globalStat, err := h.store.VisibleUnreadGlobalStat(userID)
+	if err != nil {
+		json.ServerError(w, r, err)
+		return
+	}
+
+	feedStats, err := h.store.VisibleUnreadFeedStats(userID)
+	if err != nil {
+		json.ServerError(w, r, err)
+		return
+	}
+
+	categoryStats, err := h.store.VisibleUnreadCategoryStats(userID)
+	if err != nil {
+		json.ServerError(w, r, err)
+		return
+	}
+
+	counts := make([]unreadCount, 0, 1+len(feedStats)+len(categoryStats))
+	readingListID := fmt.Sprintf(userStreamPrefix, userID) + readingListStreamSuffix
+	counts = append(counts, unreadCount{
+		ID:                      readingListID,
+		Count:                   globalStat.Count,
+		NewestItemTimestampUsec: formatTimestampUsec(globalStat.Newest),
+	})
+
+	maxUsec := timestampUsecValue(globalStat.Newest)
+
+	for _, stat := range feedStats {
+		usec := timestampUsecValue(stat.Newest)
+		if usec > maxUsec {
+			maxUsec = usec
+		}
+
+		counts = append(counts, unreadCount{
+			ID:                      fmt.Sprintf(feedPrefix+"%d", stat.FeedID),
+			Count:                   stat.Count,
+			NewestItemTimestampUsec: formatTimestampUsec(stat.Newest),
+		})
+	}
+
+	for _, stat := range categoryStats {
+		usec := timestampUsecValue(stat.Newest)
+		if usec > maxUsec {
+			maxUsec = usec
+		}
+
+		counts = append(counts, unreadCount{
+			ID:                      fmt.Sprintf(userLabelPrefix, userID) + stat.Title,
+			Count:                   stat.Count,
+			NewestItemTimestampUsec: formatTimestampUsec(stat.Newest),
+		})
+	}
+
+	json.OK(w, r, unreadCountResponse{
+		Max:          maxUsec,
+		UnreadCounts: counts,
+	})
+}
+
+func (h *handler) preferenceListHandler(w http.ResponseWriter, r *http.Request) {
+	userID := request.UserID(r)
+	clientIP := request.ClientIP(r)
+
+	slog.Debug("[GoogleReader] Handle /preference/list",
+		slog.String("handler", "preferenceListHandler"),
+		slog.String("client_ip", clientIP),
+		slog.String("user_agent", r.UserAgent()),
+	)
+
+	if err := checkOutputFormat(r); err != nil {
+		json.BadRequest(w, r, err)
+		return
+	}
+
+	user, err := h.store.UserByID(userID)
+	if err != nil {
+		json.ServerError(w, r, err)
+		return
+	}
+
+	entriesPerPage := user.EntriesPerPage
+	if entriesPerPage <= 0 {
+		entriesPerPage = 50
+	}
+
+	prefs := []preferenceEntry{
+		{ID: "entries-per-page", Value: strconv.Itoa(entriesPerPage)},
+		{ID: "entry-sorting-direction", Value: fallbackPreferenceValue(user.EntryDirection, model.DefaultSortingDirection)},
+		{ID: "entry-sorting-order", Value: fallbackPreferenceValue(user.EntryOrder, model.DefaultSortingOrder)},
+		{ID: "display-mode", Value: fallbackPreferenceValue(user.DisplayMode, "list")},
+		{ID: "language", Value: fallbackPreferenceValue(user.Language, "en_US")},
+		{ID: "mark-read-on-view", Value: boolPrefValue(user.MarkReadOnView)},
+		{ID: "show-reading-time", Value: boolPrefValue(user.ShowReadingTime)},
+		{ID: "always-open-external-links", Value: boolPrefValue(user.AlwaysOpenExternalLinks)},
+		{ID: "open-external-links-in-new-tab", Value: boolPrefValue(user.OpenExternalLinksInNewTab)},
+		{ID: "keyboard-shortcuts", Value: boolPrefValue(user.KeyboardShortcuts)},
+	}
+
+	if user.DefaultHomePage != "" {
+		prefs = append(prefs, preferenceEntry{ID: "default-home-page", Value: user.DefaultHomePage})
+	}
+
+	if user.Timezone != "" {
+		prefs = append(prefs, preferenceEntry{ID: "timezone", Value: user.Timezone})
+	}
+
+	if user.GestureNav != "" {
+		prefs = append(prefs, preferenceEntry{ID: "gesture-navigation", Value: user.GestureNav})
+	}
+
+	json.OK(w, r, preferenceListResponse{Prefs: prefs})
 }
 
 func (h *handler) streamItemIDsHandler(w http.ResponseWriter, r *http.Request) {

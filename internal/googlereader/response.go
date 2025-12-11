@@ -62,8 +62,28 @@ type streamIDResponse struct {
 	Continuation int       `json:"continuation,omitempty,string"`
 }
 
+type unreadCount struct {
+	ID                      string `json:"id"`
+	Count                   int    `json:"count"`
+	NewestItemTimestampUsec string `json:"newestItemTimestampUsec"`
+}
+
+type unreadCountResponse struct {
+	Max          int64         `json:"max"`
+	UnreadCounts []unreadCount `json:"unreadcounts"`
+}
+
 type tagsResponse struct {
 	Tags []subscriptionCategoryResponse `json:"tags"`
+}
+
+type preferenceEntry struct {
+	ID    string `json:"id"`
+	Value string `json:"value"`
+}
+
+type preferenceListResponse struct {
+	Prefs []preferenceEntry `json:"prefs"`
 }
 
 type streamContentItemsResponse struct {
