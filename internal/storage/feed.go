@@ -470,6 +470,19 @@ func (s *Storage) UpdateFeedError(feed *model.Feed) (err error) {
 // RemoveFeed removes a feed and all entries.
 // This operation can takes time if the feed has lot of entries.
 func (s *Storage) RemoveFeed(userID, feedID int64) error {
+	if err := s.RemoveFeedEntries(userID, feedID); err != nil {
+		return err
+	}
+
+	if _, err := s.db.Exec(`DELETE FROM feeds WHERE id=$1 AND user_id=$2`, feedID, userID); err != nil {
+		return fmt.Errorf(`store: unable to delete feed #%d: %v`, feedID, err)
+	}
+
+	return nil
+}
+
+// RemoveFeedEntries removes every entry belonging to the given feed/user combination.
+func (s *Storage) RemoveFeedEntries(userID, feedID int64) error {
 	rows, err := s.db.Query(`SELECT id FROM entries WHERE user_id=$1 AND feed_id=$2`, userID, feedID)
 	if err != nil {
 		return fmt.Errorf(`store: unable to get user feed entries: %v`, err)
@@ -489,15 +502,11 @@ func (s *Storage) RemoveFeed(userID, feedID int64) error {
 		)
 
 		if _, err := s.db.Exec(`DELETE FROM entries WHERE id=$1 AND user_id=$2`, entryID, userID); err != nil {
-			return fmt.Errorf(`store: unable to delete user feed entries #%d: %v`, entryID, err)
+			return fmt.Errorf(`store: unable to delete user feed entry #%d: %v`, entryID, err)
 		}
 	}
 
-	if _, err := s.db.Exec(`DELETE FROM feeds WHERE id=$1 AND user_id=$2`, feedID, userID); err != nil {
-		return fmt.Errorf(`store: unable to delete feed #%d: %v`, feedID, err)
-	}
-
-	return nil
+	return rows.Err()
 }
 
 // ResetFeedErrors removes all feed errors.

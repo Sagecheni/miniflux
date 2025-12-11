@@ -290,6 +290,17 @@
         </ul>
     </div>
 
+    <div role="alert" class="alert alert-warn">
+        <a href="#"
+            data-confirm="true"
+            data-label-question="{{ t "confirm.question" }}"
+            data-label-yes="{{ t "confirm.yes" }}"
+            data-label-no="{{ t "confirm.no" }}"
+            data-label-loading="{{ t "confirm.loading" }}"
+            data-url="{{ route "clearFeedEntries" "feedID" .feed.ID }}"
+            data-redirect-url="{{ route "editFeed" "feedID" .feed.ID }}">{{ t "action.clear_feed_entries" }}</a>
+    </div>
+
     <div role="alert" class="alert alert-error">
         <a href="#"
             data-confirm="true"
