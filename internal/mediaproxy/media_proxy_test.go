@@ -6,6 +6,7 @@ package mediaproxy // import "miniflux.app/v2/internal/mediaproxy"
 import (
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -318,6 +319,35 @@ func TestProxyFilterWithHttpInvalid(t *testing.T) {
 	}
 }
 
+func TestProxyFilterSkipsExcludedDomains(t *testing.T) {
+	os.Clearenv()
+	os.Setenv("MEDIA_PROXY_MODE", "all")
+	os.Setenv("MEDIA_PROXY_RESOURCE_TYPES", "image")
+	os.Setenv("MEDIA_PROXY_PRIVATE_KEY", "test")
+	os.Setenv("MEDIA_PROXY_EXCLUDED_DOMAINS", "hub.sagec.fun")
+
+	var err error
+	parser := config.NewConfigParser()
+	config.Opts, err = parser.ParseEnvironmentVariables()
+	if err != nil {
+		t.Fatalf(`Parsing failure: %v`, err)
+	}
+
+	r := mux.NewRouter()
+	r.HandleFunc("/proxy/{encodedDigest}/{encodedURL}", func(w http.ResponseWriter, r *http.Request) {}).Name("proxy")
+
+	input := `<p><img src="https://hub.sagec.fun/image.png" alt="LAN"/><img src="https://example.com/image.png" alt="Remote"/></p>`
+	output := RewriteDocumentWithRelativeProxyURL(r, input)
+
+	if !strings.Contains(output, `src="https://hub.sagec.fun/image.png"`) {
+		t.Fatalf("Expected excluded domain to stay untouched, got %s", output)
+	}
+
+	if !strings.Contains(output, `src="/proxy/`) {
+		t.Fatalf("Expected non-excluded domain to be proxified, got %s", output)
+	}
+}
+
 func TestProxyFilterWithSrcset(t *testing.T) {
 	os.Clearenv()
 	os.Setenv("MEDIA_PROXY_MODE", "all")
@@ -548,6 +578,7 @@ func TestShouldProxifyURLWithMimeType(t *testing.T) {
 		mediaMimeType           string
 		mediaProxyOption        string
 		mediaProxyResourceTypes []string
+		excludedDomains         []string
 		expected                bool
 	}{
 		{
@@ -670,11 +701,29 @@ func TestShouldProxifyURLWithMimeType(t *testing.T) {
 			mediaProxyResourceTypes: []string{"video"},
 			expected:                true,
 		},
+		{
+			name:                    "URL with excluded domain should not be proxified",
+			mediaURL:                "http://hub.sagec.fun/image.jpg",
+			mediaMimeType:           "image/jpeg",
+			mediaProxyOption:        "all",
+			mediaProxyResourceTypes: []string{"image"},
+			excludedDomains:         []string{"hub.sagec.fun"},
+			expected:                false,
+		},
+		{
+			name:                    "URL not in excluded domain list should be proxified",
+			mediaURL:                "http://example.com/image.jpg",
+			mediaMimeType:           "image/jpeg",
+			mediaProxyOption:        "all",
+			mediaProxyResourceTypes: []string{"image"},
+			excludedDomains:         []string{"hub.sagec.fun"},
+			expected:                true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := ShouldProxifyURLWithMimeType(tc.mediaURL, tc.mediaMimeType, tc.mediaProxyOption, tc.mediaProxyResourceTypes)
+			result := ShouldProxifyURLWithMimeType(tc.mediaURL, tc.mediaMimeType, tc.mediaProxyOption, tc.mediaProxyResourceTypes, tc.excludedDomains)
 			if result != tc.expected {
 				t.Errorf("Expected %v, got %v for URL: %s, MIME type: %s, proxy option: %s, resource types: %v",
 					tc.expected, result, tc.mediaURL, tc.mediaMimeType, tc.mediaProxyOption, tc.mediaProxyResourceTypes)

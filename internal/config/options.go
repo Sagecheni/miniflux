@@ -376,6 +376,11 @@ func NewConfigOptions() *configOptions {
 				ValueType: bytesType,
 				Secret:    true,
 			},
+			"MEDIA_PROXY_EXCLUDED_DOMAINS": {
+				ParsedStringList: []string{},
+				RawValue:         "",
+				ValueType:        stringListType,
+			},
 			"MEDIA_PROXY_RESOURCE_TYPES": {
 				ParsedStringList: []string{"image"},
 				RawValue:         "image",
@@ -841,6 +846,10 @@ func (c *configOptions) MediaProxyMode() string {
 
 func (c *configOptions) MediaProxyPrivateKey() []byte {
 	return c.options["MEDIA_PROXY_PRIVATE_KEY"].ParsedBytesValue
+}
+
+func (c *configOptions) MediaProxyExcludedDomains() []string {
+	return c.options["MEDIA_PROXY_EXCLUDED_DOMAINS"].ParsedStringList
 }
 
 func (c *configOptions) MediaProxyResourceTypes() []string {

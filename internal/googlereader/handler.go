@@ -792,7 +792,12 @@ func (h *handler) streamItemContentsHandler(w http.ResponseWriter, r *http.Reque
 		}
 
 		entry.Content = mediaproxy.RewriteDocumentWithAbsoluteProxyURL(h.router, entry.Content)
-		entry.Enclosures.ProxifyEnclosureURL(h.router, config.Opts.MediaProxyMode(), config.Opts.MediaProxyResourceTypes())
+		entry.Enclosures.ProxifyEnclosureURL(
+			h.router,
+			config.Opts.MediaProxyMode(),
+			config.Opts.MediaProxyResourceTypes(),
+			config.Opts.MediaProxyExcludedDomains(),
+		)
 
 		result.Items[i] = contentItem{
 			ID:            convertEntryIDToLongFormItemID(entry.ID),

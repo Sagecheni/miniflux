@@ -4,6 +4,7 @@
 package mediaproxy // import "miniflux.app/v2/internal/mediaproxy"
 
 import (
+	"net/url"
 	"slices"
 	"strings"
 
@@ -30,6 +31,7 @@ func genericProxyRewriter(router *mux.Router, proxifyFunction urlProxyRewriter, 
 	if proxyOption == "none" {
 		return htmlDocument
 	}
+	excludedDomains := config.Opts.MediaProxyExcludedDomains()
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlDocument))
 	if err != nil {
@@ -41,20 +43,20 @@ func genericProxyRewriter(router *mux.Router, proxifyFunction urlProxyRewriter, 
 		case "image":
 			doc.Find("img, picture source").Each(func(i int, img *goquery.Selection) {
 				if srcAttrValue, ok := img.Attr("src"); ok {
-					if shouldProxifyURL(srcAttrValue, proxyOption) {
+					if shouldProxifyURL(srcAttrValue, proxyOption, excludedDomains) {
 						img.SetAttr("src", proxifyFunction(router, srcAttrValue))
 					}
 				}
 
 				if srcsetAttrValue, ok := img.Attr("srcset"); ok {
-					proxifySourceSet(img, router, proxifyFunction, proxyOption, srcsetAttrValue)
+					proxifySourceSet(img, router, proxifyFunction, proxyOption, srcsetAttrValue, excludedDomains)
 				}
 			})
 
 			if !slices.Contains(config.Opts.MediaProxyResourceTypes(), "video") {
 				doc.Find("video").Each(func(i int, video *goquery.Selection) {
 					if posterAttrValue, ok := video.Attr("poster"); ok {
-						if shouldProxifyURL(posterAttrValue, proxyOption) {
+						if shouldProxifyURL(posterAttrValue, proxyOption, excludedDomains) {
 							video.SetAttr("poster", proxifyFunction(router, posterAttrValue))
 						}
 					}
@@ -64,7 +66,7 @@ func genericProxyRewriter(router *mux.Router, proxifyFunction urlProxyRewriter, 
 		case "audio":
 			doc.Find("audio, audio source").Each(func(i int, audio *goquery.Selection) {
 				if srcAttrValue, ok := audio.Attr("src"); ok {
-					if shouldProxifyURL(srcAttrValue, proxyOption) {
+					if shouldProxifyURL(srcAttrValue, proxyOption, excludedDomains) {
 						audio.SetAttr("src", proxifyFunction(router, srcAttrValue))
 					}
 				}
@@ -73,13 +75,13 @@ func genericProxyRewriter(router *mux.Router, proxifyFunction urlProxyRewriter, 
 		case "video":
 			doc.Find("video, video source").Each(func(i int, video *goquery.Selection) {
 				if srcAttrValue, ok := video.Attr("src"); ok {
-					if shouldProxifyURL(srcAttrValue, proxyOption) {
+					if shouldProxifyURL(srcAttrValue, proxyOption, excludedDomains) {
 						video.SetAttr("src", proxifyFunction(router, srcAttrValue))
 					}
 				}
 
 				if posterAttrValue, ok := video.Attr("poster"); ok {
-					if shouldProxifyURL(posterAttrValue, proxyOption) {
+					if shouldProxifyURL(posterAttrValue, proxyOption, excludedDomains) {
 						video.SetAttr("poster", proxifyFunction(router, posterAttrValue))
 					}
 				}
@@ -95,11 +97,11 @@ func genericProxyRewriter(router *mux.Router, proxifyFunction urlProxyRewriter, 
 	return output
 }
 
-func proxifySourceSet(element *goquery.Selection, router *mux.Router, proxifyFunction urlProxyRewriter, proxyOption, srcsetAttrValue string) {
+func proxifySourceSet(element *goquery.Selection, router *mux.Router, proxifyFunction urlProxyRewriter, proxyOption, srcsetAttrValue string, excludedDomains []string) {
 	imageCandidates := sanitizer.ParseSrcSetAttribute(srcsetAttrValue)
 
 	for _, imageCandidate := range imageCandidates {
-		if shouldProxifyURL(imageCandidate.ImageURL, proxyOption) {
+		if shouldProxifyURL(imageCandidate.ImageURL, proxyOption, excludedDomains) {
 			imageCandidate.ImageURL = proxifyFunction(router, imageCandidate.ImageURL)
 		}
 	}
@@ -108,11 +110,13 @@ func proxifySourceSet(element *goquery.Selection, router *mux.Router, proxifyFun
 }
 
 // shouldProxifyURL checks if the media URL should be proxified based on the media proxy option and URL scheme.
-func shouldProxifyURL(mediaURL, mediaProxyOption string) bool {
+func shouldProxifyURL(mediaURL, mediaProxyOption string, excludedDomains []string) bool {
 	switch {
 	case mediaURL == "":
 		return false
 	case strings.HasPrefix(mediaURL, "data:"):
+		return false
+	case isDomainExcluded(mediaURL, excludedDomains):
 		return false
 	case mediaProxyOption == "all":
 		return true
@@ -124,13 +128,41 @@ func shouldProxifyURL(mediaURL, mediaProxyOption string) bool {
 }
 
 // ShouldProxifyURLWithMimeType checks if the media URL should be proxified based on the media proxy option, URL scheme, and MIME type.
-func ShouldProxifyURLWithMimeType(mediaURL, mediaMimeType, mediaProxyOption string, mediaProxyResourceTypes []string) bool {
-	if !shouldProxifyURL(mediaURL, mediaProxyOption) {
+func ShouldProxifyURLWithMimeType(mediaURL, mediaMimeType, mediaProxyOption string, mediaProxyResourceTypes, excludedDomains []string) bool {
+	if !shouldProxifyURL(mediaURL, mediaProxyOption, excludedDomains) {
 		return false
 	}
 
 	for _, mediaType := range mediaProxyResourceTypes {
 		if strings.HasPrefix(mediaMimeType, mediaType+"/") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isDomainExcluded(mediaURL string, excludedDomains []string) bool {
+	if len(excludedDomains) == 0 {
+		return false
+	}
+
+	parsedURL, err := url.Parse(mediaURL)
+	if err != nil {
+		return false
+	}
+
+	host := parsedURL.Hostname()
+	if host == "" {
+		return false
+	}
+
+	for _, domain := range excludedDomains {
+		if domain == "" {
+			continue
+		}
+
+		if strings.EqualFold(host, domain) {
 			return true
 		}
 	}

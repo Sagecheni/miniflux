@@ -34,7 +34,12 @@ func (h *handler) getEnclosureByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enclosure.ProxifyEnclosureURL(h.router, config.Opts.MediaProxyMode(), config.Opts.MediaProxyResourceTypes())
+	enclosure.ProxifyEnclosureURL(
+		h.router,
+		config.Opts.MediaProxyMode(),
+		config.Opts.MediaProxyResourceTypes(),
+		config.Opts.MediaProxyExcludedDomains(),
+	)
 
 	json.OK(w, r, enclosure)
 }

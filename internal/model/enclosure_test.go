@@ -300,12 +300,13 @@ func TestEnclosure_ProxifyEnclosureURL(t *testing.T) {
 	router.HandleFunc("/proxy/{encodedDigest}/{encodedURL}", func(w http.ResponseWriter, r *http.Request) {}).Name("proxy")
 
 	testCases := []struct {
-		name                    string
-		url                     string
-		mimeType                string
-		mediaProxyOption        string
-		mediaProxyResourceTypes []string
-		expectedURLChanged      bool
+		name                      string
+		url                       string
+		mimeType                  string
+		mediaProxyOption          string
+		mediaProxyResourceTypes   []string
+		mediaProxyExcludedDomains []string
+		expectedURLChanged        bool
 	}{
 		{
 			name:                    "HTTP URL with audio type - proxy mode all",
@@ -379,6 +380,15 @@ func TestEnclosure_ProxifyEnclosureURL(t *testing.T) {
 			mediaProxyResourceTypes: []string{"audio", "video"},
 			expectedURLChanged:      false,
 		},
+		{
+			name:                      "URL with excluded domain should not change",
+			url:                       "http://hub.sagec.fun/audio.mp3",
+			mimeType:                  "audio/mpeg",
+			mediaProxyOption:          "all",
+			mediaProxyResourceTypes:   []string{"audio"},
+			mediaProxyExcludedDomains: []string{"hub.sagec.fun"},
+			expectedURLChanged:        false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -391,7 +401,7 @@ func TestEnclosure_ProxifyEnclosureURL(t *testing.T) {
 			originalURL := enclosure.URL
 
 			// Call the method
-			enclosure.ProxifyEnclosureURL(router, tc.mediaProxyOption, tc.mediaProxyResourceTypes)
+			enclosure.ProxifyEnclosureURL(router, tc.mediaProxyOption, tc.mediaProxyResourceTypes, tc.mediaProxyExcludedDomains)
 
 			// Check if URL changed as expected
 			urlChanged := enclosure.URL != originalURL
@@ -430,11 +440,12 @@ func TestEnclosureList_ProxifyEnclosureURL(t *testing.T) {
 	router.HandleFunc("/proxy/{encodedDigest}/{encodedURL}", func(w http.ResponseWriter, r *http.Request) {}).Name("proxy")
 
 	testCases := []struct {
-		name                    string
-		enclosures              EnclosureList
-		mediaProxyOption        string
-		mediaProxyResourceTypes []string
-		expectedChangedCount    int
+		name                      string
+		enclosures                EnclosureList
+		mediaProxyOption          string
+		mediaProxyResourceTypes   []string
+		mediaProxyExcludedDomains []string
+		expectedChangedCount      int
 	}{
 		{
 			name: "Mixed enclosures with all proxy mode",
@@ -496,6 +507,17 @@ func TestEnclosureList_ProxifyEnclosureURL(t *testing.T) {
 			mediaProxyResourceTypes: []string{"audio", "video"},
 			expectedChangedCount:    1, // only the non-empty URL should be processed
 		},
+		{
+			name: "Excluded domains are ignored",
+			enclosures: EnclosureList{
+				&Enclosure{URL: "http://hub.sagec.fun/audio.mp3", MimeType: "audio/mpeg"},
+				&Enclosure{URL: "http://example.com/video.mp4", MimeType: "video/mp4"},
+			},
+			mediaProxyOption:          "all",
+			mediaProxyResourceTypes:   []string{"audio", "video"},
+			mediaProxyExcludedDomains: []string{"hub.sagec.fun"},
+			expectedChangedCount:      1,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -507,7 +529,7 @@ func TestEnclosureList_ProxifyEnclosureURL(t *testing.T) {
 			}
 
 			// Call the method
-			tc.enclosures.ProxifyEnclosureURL(router, tc.mediaProxyOption, tc.mediaProxyResourceTypes)
+			tc.enclosures.ProxifyEnclosureURL(router, tc.mediaProxyOption, tc.mediaProxyResourceTypes, tc.mediaProxyExcludedDomains)
 
 			// Count how many URLs actually changed
 			changedCount := 0
@@ -550,7 +572,7 @@ func TestEnclosure_ProxifyEnclosureURL_EdgeCases(t *testing.T) {
 		}
 
 		originalURL := enclosure.URL
-		enclosure.ProxifyEnclosureURL(router, "all", []string{})
+		enclosure.ProxifyEnclosureURL(router, "all", []string{}, nil)
 
 		// With empty resource types, URL should not change
 		if enclosure.URL != originalURL {
@@ -565,7 +587,7 @@ func TestEnclosure_ProxifyEnclosureURL_EdgeCases(t *testing.T) {
 		}
 
 		originalURL := enclosure.URL
-		enclosure.ProxifyEnclosureURL(router, "all", nil)
+		enclosure.ProxifyEnclosureURL(router, "all", nil, nil)
 
 		// With nil resource types, URL should not change
 		if enclosure.URL != originalURL {
@@ -579,7 +601,7 @@ func TestEnclosure_ProxifyEnclosureURL_EdgeCases(t *testing.T) {
 		}
 
 		originalURL := enclosure.URL
-		enclosure.ProxifyEnclosureURL(router, "invalid-mode", []string{"audio"})
+		enclosure.ProxifyEnclosureURL(router, "invalid-mode", []string{"audio"}, nil)
 
 		// With invalid proxy mode, the function still proxifies non-HTTPS URLs
 		// because shouldProxifyURL defaults to checking URL scheme

@@ -1470,6 +1470,24 @@ func TestMediaProxyResourceTypesOptionParsing(t *testing.T) {
 	}
 }
 
+func TestMediaProxyExcludedDomainsOptionParsing(t *testing.T) {
+	configParser := NewConfigParser()
+
+	excludedDomains := configParser.options.MediaProxyExcludedDomains()
+	if len(excludedDomains) != 0 {
+		t.Fatalf("Expected MEDIA_PROXY_EXCLUDED_DOMAINS to be empty by default")
+	}
+
+	if err := configParser.parseLines([]string{"MEDIA_PROXY_EXCLUDED_DOMAINS=example.com, hub.internal"}); err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	excludedDomains = configParser.options.MediaProxyExcludedDomains()
+	if len(excludedDomains) != 2 || excludedDomains[0] != "example.com" || excludedDomains[1] != "hub.internal" {
+		t.Fatalf("Expected MEDIA_PROXY_EXCLUDED_DOMAINS to contain parsed domains, got %v", excludedDomains)
+	}
+}
+
 func TestMetricsAllowedNetworksOptionParsing(t *testing.T) {
 	configParser := NewConfigParser()
 
